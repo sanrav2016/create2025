@@ -25,7 +25,7 @@ export default function App() {
       const characteristic = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
 
       document.getElementById("sendButton").onclick = async function () {
-        const command = motorValues.join(',');
+        const command = "0," + motorValues.join(',');
         const encoder = new TextEncoder();
         await characteristic.writeValue(encoder.encode(command));
       };
