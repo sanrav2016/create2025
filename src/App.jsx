@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import './App.css';
 
 export default function App() {
+  const [characteristic, setCharacteristic] = useState(null);
   const [motorValues, setMotorValues] = useState([0, 0, 0, 0]);
   const [profile, setProfile] = useState("default");
   const [profiles, setProfiles] = useState({
@@ -22,13 +23,7 @@ export default function App() {
 
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
-      const characteristic = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
-
-      document.getElementById("sendButton").onclick = async function () {
-        const command = "0," + motorValues.join(',');
-        const encoder = new TextEncoder();
-        await characteristic.writeValue(encoder.encode(command));
-      };
+      setCharacteristic(await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8'));
 
     } catch (error) {
       console.error("Bluetooth Connection Error: ", error);
@@ -38,6 +33,10 @@ export default function App() {
   function reset() {
     setMotorValues([0, 0, 0, 0]);
   }
+
+  useEffect(() => {
+    console.log(motorValues)
+  }, [motorValues]);
 
   function updateMotorValues(ind, val) {
     const newValues = [...motorValues];
@@ -130,7 +129,12 @@ export default function App() {
 
       <div className="flex justify-center mt-6 gap-4">
         <button onClick={reset} id="resetButton" className="bg-gray-500 text-white px-4 py-2 rounded">Reset</button>
-        <button id="sendButton" className="bg-green-500 text-white px-4 py-2 rounded">Send</button>
+        <button id="sendButton" className="bg-green-500 text-white px-4 py-2 rounded" onClick={async () => {
+          const command = "0," + motorValues.join(',');
+          console.log(command);
+          const encoder = new TextEncoder();
+          await characteristic.writeValue(encoder.encode(command));
+        }}>Send</button>
       </div>
     </div>
   );
