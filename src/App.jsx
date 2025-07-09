@@ -1,141 +1,176 @@
-import { useState, useRef, useEffect } from 'react';
-import './App.css';
+import React, { useState, useEffect } from 'react';
+import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  getDocs
+} from 'firebase/firestore';
 
-export default function App() {
+const modes = ['Focus', 'Relax', 'Workout'];
+
+const App = () => {
+  const [motorValues, setMotorValues] = useState([0, 0, 0]);
   const [characteristic, setCharacteristic] = useState(null);
-  const [motorValues, setMotorValues] = useState([0, 0, 0, 0]);
-  const [profile, setProfile] = useState("default");
-  const [profiles, setProfiles] = useState({
-    Custom: [0, 0, 0, 0],
-    Default: [0, 0, 0, 0],
-    Low: [100, 150, 200, 255],
-    High: [50, 75, 125, 175],
-  });
+  const [duration, setDuration] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [selectedMode, setSelectedMode] = useState(modes[0]);
+  const [profiles, setProfiles] = useState({});
 
-  const canvasRef = useRef(null);
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      const snapshot = await getDocs(collection(db, 'motorProfiles'));
+      const data = {};
+      snapshot.forEach((doc) => {
+        data[doc.id] = doc.data().values;
+      });
+      setProfiles(data);
+    };
+    fetchProfiles();
+  }, []);
 
-  async function connect() {
+  useEffect(() => {
+    let interval = null;
+    if (timerRunning && timeLeft > 0) {
+      interval = setInterval(async () => {
+        setTimeLeft((prev) => prev - 1);
+
+        if (characteristic) {
+          const command = "0," + motorValues.join(',');
+          const encoder = new TextEncoder();
+          await characteristic.writeValue(encoder.encode(command));
+        }
+      }, 1000);
+    } else if (timeLeft === 0) {
+      clearInterval(interval);
+      setTimerRunning(false);
+    }
+    return () => clearInterval(interval);
+  }, [timerRunning, timeLeft, characteristic, motorValues]);
+
+  const handleSliderChange = (index, value) => {
+    const updated = [...motorValues];
+    updated[index] = parseInt(value);
+    setMotorValues(updated);
+  };
+
+  const handleSaveProfile = async () => {
+    await setDoc(doc(db, 'motorProfiles', selectedMode), {
+      values: motorValues,
+    });
+    setProfiles((prev) => ({ ...prev, [selectedMode]: motorValues }));
+  };
+
+  const handleLoadProfile = async (mode) => {
+    const docRef = doc(db, 'motorProfiles', mode);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      setMotorValues(docSnap.data().values);
+    }
+  };
+
+  const connectToDevice = async () => {
     try {
       const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
+        filters: [{ services: ['battery_service'] }]
       });
-
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
-      setCharacteristic(await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8'));
-
+      const service = await server.getPrimaryService('battery_service');
+      const char = await service.getCharacteristic('battery_level');
+      setCharacteristic(char);
     } catch (error) {
-      console.error("Bluetooth Connection Error: ", error);
+      console.error('Bluetooth connection failed', error);
     }
-  }
-
-  function reset() {
-    setMotorValues([0, 0, 0, 0]);
-  }
-
-  useEffect(() => {
-    console.log(motorValues)
-  }, [motorValues]);
-
-  function updateMotorValues(ind, val) {
-    const newValues = [...motorValues];
-    newValues[ind] = parseInt(val);
-    setMotorValues(newValues);
-    setProfile("custom");
-    setProfiles({ ...profiles, custom: newValues });
-  }
-
-  function handleProfileChange(e) {
-    const selectedProfile = e.target.value;
-    setProfile(selectedProfile);
-    if (profiles[selectedProfile]) {
-      setMotorValues(profiles[selectedProfile]);
-    }
-  }
-
-  function saveCurrentProfile() {
-    if (profile === "custom") {
-      const newProfileName = prompt("Enter profile name: ");
-      if (newProfileName) {
-        setProfiles({ ...profiles, [newProfileName]: motorValues });
-        setProfile(newProfileName);
-      }
-    } else {
-      setProfiles({ ...profiles, [profile]: motorValues });
-    }
-  }
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    ctx.beginPath();
-    ctx.moveTo(0, 150 - motorValues[0] * 0.5);
-
-    motorValues.forEach((val, i) => {
-      const x = (canvas.width / (motorValues.length - 1)) * i;
-      const y = 150 - val * 0.5;
-      ctx.lineTo(x, y);
-    });
-
-    ctx.strokeStyle = "green";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, 150);
-    gradient.addColorStop(0, "rgba(0,255,0,0.4)");
-    gradient.addColorStop(1, "rgba(0,255,0,0)");
-
-    ctx.lineTo(canvas.width, 150);
-    ctx.lineTo(0, 150);
-    ctx.closePath();
-    ctx.fillStyle = gradient;
-    ctx.fill();
-  }, [motorValues]);
+  };
 
   return (
-    <div className="p-4 text-center font-sans max-w-md mx-auto">
-      <h1 className="text-xl font-bold mb-4">ESP32 Control Panel</h1>
-      <button onClick={connect} className="bg-blue-500 text-white px-4 py-2 rounded mb-4">Connect to ESP32</button>
+    <div className="p-4 font-sans max-w-md mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Motor Control Timer</h1>
 
-      <div className="flex justify-between items-center mb-4">
-        <select value={profile} onChange={handleProfileChange} className="p-2 border rounded">
-          {Object.keys(profiles).map((profileName) => (
-            <option key={profileName} value={profileName}>{profileName}</option>
+      <button
+        onClick={connectToDevice}
+        className="mb-4 bg-blue-500 text-white px-4 py-2 rounded"
+      >
+        Connect to Bluetooth
+      </button>
+
+      <div className="mb-4">
+        <label className="block mb-2 font-medium">Select Mode</label>
+        <select
+          value={selectedMode}
+          onChange={(e) => {
+            setSelectedMode(e.target.value);
+            handleLoadProfile(e.target.value);
+          }}
+          className="p-2 border rounded w-full"
+        >
+          {modes.map((mode) => (
+            <option key={mode} value={mode}>{mode}</option>
           ))}
         </select>
-        <button onClick={saveCurrentProfile} className="ml-2 bg-yellow-500 text-white p-2 rounded">Save</button>
+        <button
+          onClick={handleSaveProfile}
+          className="mt-2 bg-green-600 text-white px-4 py-1 rounded"
+        >
+          Save Profile
+        </button>
       </div>
 
-      <canvas ref={canvasRef} width={400} height={150} className="mx-auto mb-4 border rounded"></canvas>
-
-      <div className="flex justify-between items-end w-full px-2">
-        {motorValues.map((val, index) => (
-          <div key={index} className="flex flex-col items-center">
+      <div className="mb-4">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="mb-2">
+            <label className="block">Motor {i + 1}: {motorValues[i]}</label>
             <input
               type="range"
               min="0"
-              max="255"
-              value={val}
-              onChange={(e) => updateMotorValues(index, e.target.value)}
-              className="transform -rotate-90 w-36 mb-2"
+              max="100"
+              value={motorValues[i]}
+              onChange={(e) => handleSliderChange(i, e.target.value)}
+              className="w-full"
             />
-            <span>{val}</span>
           </div>
         ))}
       </div>
 
-      <div className="flex justify-center mt-6 gap-4">
-        <button onClick={reset} id="resetButton" className="bg-gray-500 text-white px-4 py-2 rounded">Reset</button>
-        <button id="sendButton" className="bg-green-500 text-white px-4 py-2 rounded" onClick={async () => {
-          const command = "0," + motorValues.join(',');
-          console.log(command);
-          const encoder = new TextEncoder();
-          await characteristic.writeValue(encoder.encode(command));
-        }}>Send</button>
+      <div className="mb-4">
+        <label className="block mb-2 font-medium">Set Duration (seconds)</label>
+        <input
+          type="number"
+          value={duration}
+          onChange={(e) => setDuration(Number(e.target.value))}
+          className="p-2 border rounded w-24"
+          min="1"
+        />
+        <button
+          onClick={() => {
+            setTimeLeft(duration);
+            setTimerRunning(true);
+          }}
+          className="ml-4 bg-red-500 text-white px-4 py-2 rounded"
+          disabled={timerRunning}
+        >
+          Start Timer
+        </button>
+
+        {timerRunning && (
+          <div className="mt-2 text-lg font-semibold">
+            Time Left: {timeLeft}s
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="font-semibold text-lg mb-2">Saved Profiles</h2>
+        {Object.entries(profiles).map(([mode, values]) => (
+          <div key={mode} className="mb-2">
+            <strong>{mode}:</strong> [{values.join(', ')}]
+          </div>
+        ))}
       </div>
     </div>
   );
-}
+};
+
+export default App;
