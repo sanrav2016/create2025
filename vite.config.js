@@ -7,20 +7,18 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 })
 
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+// firebase.js
+import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB5Lc4zpsu3IDUkc5OAwbzv_zYLXqvDH_Y",
-  authDomain: "create-2025.firebaseapp.com",
-  projectId: "create-2025",
-  storageBucket: "create-2025.firebasestorage.app",
-  messagingSenderId: "386106863721",
-  appId: "1:386106863721:web:23e2177b35b7f4d309f2f8",
-  measurementId: "G-KQ91W3GT1T"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
+export const db = getFirestore(app);
