@@ -71,26 +71,57 @@ const App = () => {
     }
   };
 
-  const connectToDevice = async () => {
+  async function connect() {
     try {
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ['battery_service'] }]
+        acceptAllDevices: true,
+        optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
       });
+
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService('battery_service');
-      const char = await service.getCharacteristic('battery_level');
-      setCharacteristic(char);
+      const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
+      setCharacteristic(await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8'));
+
     } catch (error) {
-      console.error('Bluetooth connection failed', error);
+      console.error("Bluetooth Connection Error: ", error);
     }
-  };
+  }
+
+    useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.beginPath();
+    ctx.moveTo(0, 150 - motorValues[0] * 0.5);
+
+    motorValues.forEach((val, i) => {
+      const x = (canvas.width / (motorValues.length - 1)) * i;
+      const y = 150 - val * 0.5;
+      ctx.lineTo(x, y);
+    });
+
+    ctx.strokeStyle = "green";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, 150);
+    gradient.addColorStop(0, "rgba(0,255,0,0.4)");
+    gradient.addColorStop(1, "rgba(0,255,0,0)");
+
+    ctx.lineTo(canvas.width, 150);
+    ctx.lineTo(0, 150);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+  }, [motorValues]);
 
   return (
     <div className="p-4 font-sans max-w-md mx-auto">
       <h1 className="text-2xl font-bold mb-4">Motor Control Timer</h1>
 
       <button
-        onClick={connectToDevice}
+        onClick={connect}
         className="mb-4 bg-blue-500 text-white px-4 py-2 rounded"
       >
         Connect to Bluetooth
