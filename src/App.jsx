@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import {
   doc,
@@ -18,6 +18,8 @@ const App = () => {
   const [timerRunning, setTimerRunning] = useState(false);
   const [selectedMode, setSelectedMode] = useState(modes[0]);
   const [profiles, setProfiles] = useState({});
+
+  const canvasRef = useRef(null); // <-- Added useRef for canvas
 
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -87,8 +89,10 @@ const App = () => {
     }
   }
 
-    useEffect(() => {
+  useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return; // safeguard
+
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -164,6 +168,14 @@ const App = () => {
           </div>
         ))}
       </div>
+
+      {/* Canvas for graph */}
+      <canvas
+        ref={canvasRef}
+        width={300}
+        height={150}
+        className="border mb-4"
+      />
 
       <div className="mb-4">
         <label className="block mb-2 font-medium">Set Duration (seconds)</label>
