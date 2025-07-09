@@ -8,7 +8,6 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-const modes = ['Focus', 'Relax', 'Workout'];
 const timeOptions = [
   { label: 'Untimed', value: 0 },
   { label: '5 minutes', value: 300 },
@@ -25,7 +24,7 @@ const App = () => {
   const [customDuration, setCustomDuration] = useState(1); // in minutes
   const [timeLeft, setTimeLeft] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
-  const [selectedMode, setSelectedMode] = useState(modes[0]);
+  const [selectedMode, setSelectedMode] = useState('');
   const [profiles, setProfiles] = useState({});
 
   const canvasRef = useRef(null);
@@ -38,11 +37,15 @@ const App = () => {
         data[doc.id] = doc.data().values;
       });
       setProfiles(data);
+      const firstProfile = Object.keys(data)[0];
+      if (firstProfile) {
+        setSelectedMode(firstProfile);
+        setMotorValues(data[firstProfile]);
+      }
     };
     fetchProfiles();
   }, []);
 
-  // Timer interval sends motor commands automatically
   useEffect(() => {
     let interval = null;
     if (timerRunning && timeLeft > 0) {
@@ -50,7 +53,7 @@ const App = () => {
         setTimeLeft((prev) => prev - 1);
 
         if (characteristic) {
-          const command = "0," + motorValues.join(',');
+          const command = "0," + motorValues.join(',') + ",0";
           const encoder = new TextEncoder();
           try {
             await characteristic.writeValue(encoder.encode(command));
@@ -59,7 +62,7 @@ const App = () => {
           }
         }
       }, 1000);
-    } else if (timeLeft === 0) {
+    } else if (timeLeft === 0 && timerRunning) {
       clearInterval(interval);
       setTimerRunning(false);
     }
@@ -73,10 +76,14 @@ const App = () => {
   };
 
   const handleSaveProfile = async () => {
-    await setDoc(doc(db, 'motorProfiles', selectedMode), {
-      values: motorValues,
-    });
-    setProfiles((prev) => ({ ...prev, [selectedMode]: motorValues }));
+    const name = prompt("Enter a name for this mode:", selectedMode);
+    if (name) {
+      await setDoc(doc(db, 'motorProfiles', name), {
+        values: motorValues,
+      });
+      setProfiles((prev) => ({ ...prev, [name]: motorValues }));
+      setSelectedMode(name);
+    }
   };
 
   const handleLoadProfile = async (mode) => {
@@ -133,7 +140,6 @@ const App = () => {
     ctx.fill();
   }, [motorValues]);
 
-  // Manual send function for motors
   const sendMotorCommand = async () => {
     if (!characteristic) {
       alert('Please connect to Bluetooth first.');
@@ -143,22 +149,19 @@ const App = () => {
       alert("Please enter a valid custom duration.");
       return;
     }
-    if (selectedTimeOption === 0) {
-      // Untimed mode, just send once
-      const command = "0," + motorValues.join(',');
-      const encoder = new TextEncoder();
-      try {
-        await characteristic.writeValue(encoder.encode(command));
-        console.log('Motor command sent:', command);
-      } catch (e) {
-        console.error('Bluetooth write error:', e);
-      }
-      return;
+    const command = "0," + motorValues.join(',') + ",0";
+    const encoder = new TextEncoder();
+    try {
+      await characteristic.writeValue(encoder.encode(command));
+      console.log('Motor command sent:', command);
+    } catch (e) {
+      console.error('Bluetooth write error:', e);
     }
-    // Timed mode - start timer
-    const totalSeconds = selectedTimeOption === -1 ? customDuration * 60 : selectedTimeOption;
-    setTimeLeft(totalSeconds);
-    setTimerRunning(true);
+    if (selectedTimeOption !== 0) {
+      const totalSeconds = selectedTimeOption === -1 ? customDuration * 60 : selectedTimeOption;
+      setTimeLeft(totalSeconds);
+      setTimerRunning(true);
+    }
   };
 
   return (
@@ -182,7 +185,7 @@ const App = () => {
           }}
           className="p-2 border rounded w-full"
         >
-          {modes.map((mode) => (
+          {Object.keys(profiles).map((mode) => (
             <option key={mode} value={mode}>{mode}</option>
           ))}
         </select>
@@ -210,7 +213,6 @@ const App = () => {
         ))}
       </div>
 
-      {/* Canvas for graph */}
       <canvas
         ref={canvasRef}
         width={400}
@@ -240,6 +242,11 @@ const App = () => {
             className="p-2 border rounded w-full"
             placeholder="Enter custom duration in minutes"
           />
+        )}
+        {timerRunning && (
+          <div className="mt-2 text-lg font-semibold">
+            Time Left: {Math.floor(timeLeft / 60)}m {timeLeft % 60}s
+          </div>
         )}
       </div>
 
