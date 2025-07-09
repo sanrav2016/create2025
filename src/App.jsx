@@ -9,17 +9,26 @@ import {
 } from 'firebase/firestore';
 
 const modes = ['Focus', 'Relax', 'Workout'];
+const timeOptions = [
+  { label: 'Untimed', value: 0 },
+  { label: '5 minutes', value: 300 },
+  { label: '10 minutes', value: 600 },
+  { label: '15 minutes', value: 900 },
+  { label: '30 minutes', value: 1800 },
+  { label: 'Custom', value: -1 },
+];
 
 const App = () => {
-  const [motorValues, setMotorValues] = useState([0, 0, 0]);
+  const [motorValues, setMotorValues] = useState([0, 0, 0, 0]);
   const [characteristic, setCharacteristic] = useState(null);
-  const [duration, setDuration] = useState(60);
+  const [selectedTimeOption, setSelectedTimeOption] = useState(0); // default Untimed
+  const [customDuration, setCustomDuration] = useState(1); // in minutes
   const [timeLeft, setTimeLeft] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const [selectedMode, setSelectedMode] = useState(modes[0]);
   const [profiles, setProfiles] = useState({});
 
-  const canvasRef = useRef(null); // <-- Added useRef for canvas
+  const canvasRef = useRef(null);
 
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -33,6 +42,7 @@ const App = () => {
     fetchProfiles();
   }, []);
 
+  // Timer interval sends motor commands automatically
   useEffect(() => {
     let interval = null;
     if (timerRunning && timeLeft > 0) {
@@ -42,7 +52,11 @@ const App = () => {
         if (characteristic) {
           const command = "0," + motorValues.join(',');
           const encoder = new TextEncoder();
-          await characteristic.writeValue(encoder.encode(command));
+          try {
+            await characteristic.writeValue(encoder.encode(command));
+          } catch (e) {
+            console.error('Bluetooth write error:', e);
+          }
         }
       }, 1000);
     } else if (timeLeft === 0) {
@@ -83,7 +97,6 @@ const App = () => {
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
       setCharacteristic(await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8'));
-
     } catch (error) {
       console.error("Bluetooth Connection Error: ", error);
     }
@@ -91,7 +104,7 @@ const App = () => {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return; // safeguard
+    if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -119,6 +132,34 @@ const App = () => {
     ctx.fillStyle = gradient;
     ctx.fill();
   }, [motorValues]);
+
+  // Manual send function for motors
+  const sendMotorCommand = async () => {
+    if (!characteristic) {
+      alert('Please connect to Bluetooth first.');
+      return;
+    }
+    if (selectedTimeOption === -1 && (customDuration <= 0 || isNaN(customDuration))) {
+      alert("Please enter a valid custom duration.");
+      return;
+    }
+    if (selectedTimeOption === 0) {
+      // Untimed mode, just send once
+      const command = "0," + motorValues.join(',');
+      const encoder = new TextEncoder();
+      try {
+        await characteristic.writeValue(encoder.encode(command));
+        console.log('Motor command sent:', command);
+      } catch (e) {
+        console.error('Bluetooth write error:', e);
+      }
+      return;
+    }
+    // Timed mode - start timer
+    const totalSeconds = selectedTimeOption === -1 ? customDuration * 60 : selectedTimeOption;
+    setTimeLeft(totalSeconds);
+    setTimerRunning(true);
+  };
 
   return (
     <div className="p-4 font-sans max-w-md mx-auto">
@@ -153,18 +194,18 @@ const App = () => {
         </button>
       </div>
 
-      <div className="mb-4">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="mb-2">
-            <label className="block">Motor {i + 1}: {motorValues[i]}</label>
+      <div className="mb-4 flex justify-between px-2">
+        {motorValues.map((val, index) => (
+          <div key={index} className="flex flex-col items-center">
             <input
               type="range"
               min="0"
-              max="100"
-              value={motorValues[i]}
-              onChange={(e) => handleSliderChange(i, e.target.value)}
-              className="w-full"
+              max="255"
+              value={val}
+              onChange={(e) => handleSliderChange(index, e.target.value)}
+              className="transform -rotate-90 w-24 mb-2"
             />
+            <span>{val}</span>
           </div>
         ))}
       </div>
@@ -172,39 +213,54 @@ const App = () => {
       {/* Canvas for graph */}
       <canvas
         ref={canvasRef}
-        width={300}
+        width={400}
         height={150}
-        className="border mb-4"
+        className="border mb-4 mx-auto rounded"
       />
 
       <div className="mb-4">
-        <label className="block mb-2 font-medium">Set Duration (seconds)</label>
-        <input
-          type="number"
-          value={duration}
-          onChange={(e) => setDuration(Number(e.target.value))}
-          className="p-2 border rounded w-24"
-          min="1"
-        />
-        <button
-          onClick={() => {
-            setTimeLeft(duration);
-            setTimerRunning(true);
-          }}
-          className="ml-4 bg-red-500 text-white px-4 py-2 rounded"
-          disabled={timerRunning}
+        <label className="block mb-2 font-medium">Select Timer Duration</label>
+        <select
+          value={selectedTimeOption}
+          onChange={(e) => setSelectedTimeOption(Number(e.target.value))}
+          className="p-2 border rounded w-full mb-2"
         >
-          Start Timer
-        </button>
-
-        {timerRunning && (
-          <div className="mt-2 text-lg font-semibold">
-            Time Left: {timeLeft}s
-          </div>
+          {timeOptions.map((opt) => (
+            <option key={opt.label} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {selectedTimeOption === -1 && (
+          <input
+            type="number"
+            min="1"
+            value={customDuration}
+            onChange={(e) => setCustomDuration(Number(e.target.value))}
+            className="p-2 border rounded w-full"
+            placeholder="Enter custom duration in minutes"
+          />
         )}
       </div>
 
-      <div>
+      <div className="flex justify-center gap-4">
+        <button
+          onClick={() => setMotorValues([0, 0, 0, 0])}
+          className="bg-gray-500 text-white px-4 py-2 rounded"
+        >
+          Reset
+        </button>
+
+        <button
+          onClick={sendMotorCommand}
+          className="bg-green-500 text-white px-4 py-2 rounded"
+          disabled={!characteristic || (selectedTimeOption === -1 && (customDuration <= 0 || isNaN(customDuration)))}
+        >
+          Send
+        </button>
+      </div>
+
+      <div className="mt-4">
         <h2 className="font-semibold text-lg mb-2">Saved Profiles</h2>
         {Object.entries(profiles).map(([mode, values]) => (
           <div key={mode} className="mb-2">
